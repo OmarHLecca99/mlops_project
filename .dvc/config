@@ -1,0 +1,7 @@
+[core]
+    remote = onedrive_shared_local
+['remote "gdrive_remote"']
+    url = gdrive://1toEJEhDd5Ux6aZVIW8LQZuD-tc9XqfJ7
+    gdrive_use_service_account = false
+['remote "onedrive_shared_local"']
+    url = C:\Users\omarh\OneDrive\DVC MLOPs
