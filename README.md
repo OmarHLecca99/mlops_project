@@ -43,9 +43,10 @@ pip install -r requirements.txt
 dvc pull
 ```
 
-### 5️⃣ Ejecutar el pipeline completo
+### 5️⃣ Ejecutar el pipeline completo 
+Se usa el -f train para entrenar nuevamente y se generen el mlruns para el mlflow (el entrenamiento demora aprox 16 min)
 ```bash
-dvc repro
+dvc repro #Para volver a entrenar: dvc repro -f train
 ```
 
 ### 6️⃣ Visualizar resultados en MLflow UI
