@@ -1,112 +1,111 @@
+# =====================================================
+# 🧠 ENTRENAMIENTO DEL MODELO CON PIPELINE AUTOMÁTICO
+# =====================================================
+import os
 import pandas as pd
-from sklearn.linear_model import LogisticRegression
-from sklearn.preprocessing import StandardScaler, LabelEncoder
-from sklearn.pipeline import Pipeline
-from sklearn.impute import SimpleImputer
 import mlflow
 import mlflow.sklearn
+from sklearn.linear_model import LogisticRegression
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import StandardScaler, OneHotEncoder
+from sklearn.experimental import enable_iterative_imputer  # habilita el imputador
+from sklearn.impute import IterativeImputer, SimpleImputer
+from sklearn.compose import ColumnTransformer
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
 import joblib
-import os
 
+
+# =====================================================
+# 🔧 Función principal de entrenamiento
+# =====================================================
 def train_model():
-    # ===============================
-    # 1️⃣ Configurar experimento MLflow
-    # ===============================
+    # --- Cargar datos
+    data = pd.read_csv("data/processed/train.csv")
+    print(f"📦 Dataset cargado: {data.shape[0]} filas, {data.shape[1]} columnas")
+
+    # --- Eliminar columnas identificadoras (no predictivas)
+    id_cols = [c for c in data.columns if "key" in c.lower() or "id" in c.lower()]
+    if id_cols:
+        data = data.drop(columns=id_cols)
+        print(f"🧹 Columnas ID eliminadas: {id_cols}")
+
+    # --- Separar variables predictoras y target
+    X = data.drop("target", axis=1)
+    y = data["target"]
+
+    # --- Detectar columnas numéricas y categóricas
+    num_cols = X.select_dtypes(include=["int64", "float64"]).columns
+    cat_cols = X.select_dtypes(include=["object"]).columns
+
+    print(f"🔢 Columnas numéricas: {len(num_cols)}")
+    print(f"🔠 Columnas categóricas: {len(cat_cols)}")
+
+    # =====================================================
+    # 🧩 Construir el pipeline de preprocesamiento
+    # =====================================================
+    numeric_pipeline = Pipeline([
+        ("imputer", IterativeImputer(max_iter=30, random_state=42)),
+        ("scaler", StandardScaler())
+    ])
+
+    categorical_pipeline = Pipeline([
+        ("imputer", SimpleImputer(strategy="most_frequent")),
+        ("encoder", OneHotEncoder(handle_unknown="ignore", sparse_output=False))
+    ])
+
+    preprocessor = ColumnTransformer([
+        ("num", numeric_pipeline, num_cols),
+        ("cat", categorical_pipeline, cat_cols)
+    ])
+
+    # =====================================================
+    # ⚙️ Modelo principal
+    # =====================================================
+    pipeline = Pipeline([
+        ("preprocessor", preprocessor),
+        ("model", LogisticRegression(max_iter=300, solver="saga", n_jobs=-1))
+    ])
+
+    # =====================================================
+    # 🧪 Entrenamiento con MLflow Tracking
+    # =====================================================
     mlflow.set_experiment("mlops_demo")
 
-    with mlflow.start_run():
-        # ===============================
-        # 2️⃣ Cargar dataset procesado
-        # ===============================
-        data = pd.read_csv('data/processed/train.csv')
-
-        # Muestra reducida (opcional para evitar exceso de RAM)
-        if len(data) > 10000:
-            data = data.sample(n=10000, random_state=42)
-
-        # ===============================
-        # 3️⃣ Separar features y target
-        # ===============================
-        if 'target' not in data.columns:
-            raise ValueError("❌ No se encontró la columna 'target' en el dataset.")
-
-        X = data.drop('target', axis=1)
-        y = data['target']
-
-        # ===============================
-        # 4️⃣ Eliminar columnas tipo ID
-        # ===============================
-        id_like = [c for c in X.columns if 'id' in c.lower() or 'key' in c.lower()]
-        if id_like:
-            X = X.drop(columns=id_like)
-            print(f"🧹 Columnas ID eliminadas: {id_like}")
-
-        # ===============================
-        # 5️⃣ Codificar columnas categóricas
-        # ===============================
-        for col in X.columns:
-            if X[col].dtype == 'object' or str(X[col].dtype).startswith('category'):
-                if X[col].nunique() <= 50:
-                    le = LabelEncoder()
-                    X[col] = le.fit_transform(X[col].astype(str))
-                else:
-                    print(f"⚠️ Columna '{col}' eliminada (demasiadas categorías o texto libre).")
-                    X = X.drop(columns=[col])
-
-        # ===============================
-        # 6️⃣ Imputar valores faltantes
-        # ===============================
-        if X.isnull().any().any():
-            print("🔧 Imputando valores faltantes...")
-            num_cols = X.select_dtypes(include=['float64', 'int64']).columns
-            cat_cols = X.select_dtypes(exclude=['float64', 'int64']).columns
-
-            # Imputadores
-            num_imputer = SimpleImputer(strategy='median')
-            cat_imputer = SimpleImputer(strategy='most_frequent')
-
-            # Aplicar
-            X[num_cols] = num_imputer.fit_transform(X[num_cols])
-            if len(cat_cols) > 0:
-                X[cat_cols] = cat_imputer.fit_transform(X[cat_cols])
-
-        # ===============================
-        # 7️⃣ Crear pipeline (escalado + modelo)
-        # ===============================
-        pipeline = Pipeline([
-            ('scaler', StandardScaler()),
-            ('model', LogisticRegression(
-                max_iter=300,
-                solver='saga',
-                penalty='l2',
-                n_jobs=-1,
-                verbose=1
-            ))
-        ])
-
-        # ===============================
-        # 8️⃣ Entrenar modelo
-        # ===============================
+    with mlflow.start_run(run_name="logistic_regression_run"):
+        print("🔧 Entrenando modelo...")
         pipeline.fit(X, y)
 
-        print(f"✅ Modelo entrenado correctamente con {X.shape[1]} variables y {len(X)} registros.")
+        # --- Métricas básicas sobre entrenamiento
+        y_pred = pipeline.predict(X)
+        acc = accuracy_score(y, y_pred)
+        prec = precision_score(y, y_pred, average="weighted", zero_division=0)
+        rec = recall_score(y, y_pred, average="weighted", zero_division=0)
+        f1 = f1_score(y, y_pred, average="weighted", zero_division=0)
 
-        # ===============================
-        # 9️⃣ Guardar modelo
-        # ===============================
+        # --- Log en consola
+        print(f"✅ Modelo entrenado correctamente con {X.shape[1]} variables y {X.shape[0]} registros.")
+        print(f"📈 Métricas (train): acc={acc:.3f}, prec={prec:.3f}, rec={rec:.3f}, f1={f1:.3f}")
+
+        # --- Log de métricas en MLflow
+        mlflow.log_metric("accuracy_train", acc)
+        mlflow.log_metric("precision_train", prec)
+        mlflow.log_metric("recall_train", rec)
+        mlflow.log_metric("f1_train", f1)
+
+        # --- Guardar modelo localmente
         os.makedirs("models", exist_ok=True)
-        joblib.dump(pipeline, "models/model.pkl")
-        print("💾 Guardado en: models/model.pkl")
+        model_path = "models/model.pkl"
+        joblib.dump(pipeline, model_path)
+        print(f"💾 Guardado en: {model_path}")
 
-        # ===============================
-        # 🔟 Registrar en MLflow
-        # ===============================
-        mlflow.sklearn.log_model(pipeline, "model")
-        mlflow.log_param("n_features", X.shape[1])
-        mlflow.log_param("n_samples", len(X))
-        mlflow.log_param("solver", "saga")
-
+        # --- Registrar modelo en MLflow
+        mlflow.sklearn.log_model(pipeline, artifact_path="model")
+        mlflow.log_artifact(model_path)
         print("📊 Modelo registrado en MLflow exitosamente.")
 
+
+# =====================================================
+# 🚀 Ejecutar
+# =====================================================
 if __name__ == "__main__":
     train_model()

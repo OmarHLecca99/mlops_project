@@ -29,13 +29,13 @@ stages:
       size: 32590712
     - path: src/train.py
       hash: md5
-      md5: 0b43c7d737e90bd755ffa1fe33f55282
-      size: 4236
+      md5: 4219c82cb7abe7828386fa93e4a50ae8
+      size: 4506
     outs:
     - path: models/model.pkl
       hash: md5
-      md5: 72c5900529b4333f8458b44761629a84
-      size: 7102
+      md5: 1f0ec1a7070cf1deff29ecffd193b686
+      size: 204868055
   monitor_drift:
     cmd: python src/monitor_data_drift.py
     deps:
